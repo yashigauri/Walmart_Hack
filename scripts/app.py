@@ -11,7 +11,7 @@ st.title("🚚 Walmart Delay Prediction Dashboard")
 st.markdown("AI-powered predictions with Reinforcement Learning rerouting")
 
 # === Load data ===
-df = pd.read_csv("outputs/predictions_full_report.csv")
+df = pd.read_csv(r'C:\Users\kksin\Documents\walmart_delay_prediction\outputs\predictions_full_report.csv')
 
 # === Summary ===
 st.subheader("📊 Summary Metrics")
