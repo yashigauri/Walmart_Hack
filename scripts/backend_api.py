@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import joblib
 import pandas as pd
@@ -7,10 +8,10 @@ import torch
 import uvicorn
 import os
 
-from fastapi.middleware.cors import CORSMiddleware
-
+# Initialize FastAPI app
 app = FastAPI(title="Walmart Delay + RL Rerouting API")
 
+# Allow CORS for all origins (frontend integration)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -29,7 +30,12 @@ regressor = joblib.load("models/regressor.pkl")
 def load_rl_agent():
     from scripts.rl_agent.agent import DQNAgent
     agent = DQNAgent(state_size=4, action_size=3)
-    agent.load("models/rl_agent.pth")
+    model_path = "models/rl_agent.pth"
+    if os.path.exists(model_path):
+        agent.load(model_path)
+        print("✅ RL agent loaded.")
+    else:
+        print("⚠️ RL model not found. Using random Q-table.")
     return agent
 
 rl_agent = load_rl_agent()
@@ -57,9 +63,7 @@ def build_rl_state(row):
     time_slot = time_slot_map.get(row['time_slot'], 0.5)
     traffic = traffic_map.get(row['traffic'], 1.0)
     distance = row['distance_km']
-
-    # Normalize distance if needed
-    distance_scaled = (distance - 0) / (100)  # assuming max 100 km
+    distance_scaled = (distance - 0) / 100  # Normalize if max is 100km
 
     return [from_zone, traffic / 2, distance_scaled, time_slot]
 
@@ -71,23 +75,22 @@ def get_rl_action(state):
     actions = ["Continue", "Reroute_A", "Reroute_B"]
     return actions[action_idx]
 
+# === Root Endpoint ===
+@app.get("/")
+def root():
+    return {"message": "✅ Walmart Delay Prediction + RL Rerouting API is live!"}
 
 # === Predict Route ===
 @app.post("/predict")
 def predict(input_data: DeliveryInput):
     try:
-        # Convert to DataFrame
         df = pd.DataFrame([input_data.dict()])
-
-        # Transform
         X = transform_features(df.copy(), encoders, for_training=False)
         X_scaled = scaler.transform(X)
 
-        # Predict
         delay_label = classifier.predict(X_scaled)[0]
         delay_time = regressor.predict(X_scaled)[0]
 
-        # RL reroute
         state = build_rl_state(input_data.dict())
         action = get_rl_action(state)
 
@@ -101,6 +104,6 @@ def predict(input_data: DeliveryInput):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# === Run (only if this script is executed directly) ===
+# === Run only if standalone ===
 if __name__ == "__main__":
     uvicorn.run("scripts.backend_api:app", host="0.0.0.0", port=8000, reload=True)

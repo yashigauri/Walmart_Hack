@@ -32,11 +32,11 @@ if 'rl_action' in df.columns:
 
 # === Heatmap ===
 st.subheader("🗺️ Zone-Time Heatmap")
-st.image("outputs/zone_time_heatmap.png", caption="Delay Heatmap by Zone & Time Slot")
+st.image(r"C:\Users\kksin\Documents\walmart_delay_prediction\outputs\zone_time_heatmap.png", caption="Delay Heatmap by Zone & Time Slot")
 
 # === Confusion Matrix ===
 st.subheader("🧪 Classification Confusion Matrix")
-st.image("outputs/classification_confusion_matrix.png", caption="Predicted vs Actual Delay Categories")
+st.image(r"C:\Users\kksin\Documents\walmart_delay_prediction\outputs\classification_confusion_matrix.png", caption="Predicted vs Actual Delay Categories")
 
 # === Data Preview ===
 st.subheader("📋 Full Predictions Table")
