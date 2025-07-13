@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from collections import deque
 import random
-
+import os
 class DQNAgent:
     """
     Simple DQN Agent for route optimization
@@ -62,29 +62,20 @@ class DQNAgent:
             self.epsilon *= self.epsilon_decay
     
     def load_model(self, model_path):
-        """Load pre-trained model"""
-        try:
-            if model_path.endswith('.pth'):
-                # Handle PyTorch models
-                import torch
-                checkpoint = torch.load(model_path, map_location='cpu', weights_only=True)
-                if 'q_table' in checkpoint:
-                    self.q_table = checkpoint['q_table']
-                print(f"PyTorch model loaded from {model_path}")
-            else:
-                # Handle numpy models
-                self.q_table = np.load(model_path)
-                print(f"NumPy model loaded from {model_path}")
-        except FileNotFoundError:
-            print(f"Model file {model_path} not found. Using random initialization.")
-        except Exception as e:
-            print(f"Error loading model: {e}. Using random initialization.")
+        import torch
+        if os.path.exists(model_path):
+            checkpoint = torch.load(model_path, map_location='cpu', weights_only=False)
+            self.q_table = checkpoint['q_table']
+            print(f"✅ Model loaded from {model_path}")
+        else:
+            print(f"⚠️ Model file {model_path} not found. Using random initialization.")
     
+
     def save_model(self, model_path):
-        """Save trained model"""
-        np.save(model_path, self.q_table)
-        print(f"Model saved to {model_path}")
-    
+        import torch
+        torch.save({'q_table': self.q_table}, model_path)
+        print(f"✅ Model saved to {model_path}")
+
     def get_optimal_action(self, state):
         """Get the optimal action for a given state"""
         state_index = self.get_state_index(state)
@@ -140,3 +131,6 @@ class DQNAgent:
         suggestion["confidence"] = min(max(confidence, 0), 1)
         
         return suggestion
+    
+    def load(self, path):
+        self.load_model(path)

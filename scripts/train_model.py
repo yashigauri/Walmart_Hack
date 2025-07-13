@@ -6,7 +6,7 @@ import os
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.metrics import classification_report, mean_absolute_error, mean_squared_error
-
+from math import sqrt
 INPUT_PATH = "data/feature_data.csv"
 CLASSIFIER_PATH = "models/classifier.pkl"
 REGRESSOR_PATH = "models/regressor.pkl"
@@ -32,7 +32,7 @@ def train_models():
     reg.fit(X_train_r, y_train_r)
     print("📈 Regression Metrics:")
     print("MAE:", round(mean_absolute_error(y_test_r, reg.predict(X_test_r)), 2))
-    print("RMSE:", round(mean_squared_error(y_test_r, reg.predict(X_test_r), squared=False), 2))
+    print("RMSE:", round(sqrt(mean_squared_error(y_test_r, reg.predict(X_test_r))), 2))
 
     os.makedirs("models", exist_ok=True)
     joblib.dump(clf, CLASSIFIER_PATH)

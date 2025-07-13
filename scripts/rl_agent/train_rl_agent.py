@@ -13,7 +13,7 @@ from agent import DQNAgent
 
 def train():
     # Load data
-    df = pd.read_csv(r'C:\Users\kksin\Documents\walmart_delay_prediction\data\feature_data.csv')
+    df = pd.read_csv('data/feature_data.csv')
     
     print("📊 Data loaded successfully!")
     print(f"Dataset shape: {df.shape}")
@@ -90,7 +90,7 @@ def train():
     os.makedirs("../models", exist_ok=True)
     
     # Save the trained model
-    model_path = "../models/rl_agent.npy"  # Use .npy extension for numpy array
+    model_path = "models/rl_agent.pth"  # Use .npy extension for numpy array
     agent.save_model(model_path)
     print(f"✅ RL Agent trained and saved to {model_path}")
     
