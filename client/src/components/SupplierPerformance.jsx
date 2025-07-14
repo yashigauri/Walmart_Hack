@@ -6,6 +6,48 @@ const SupplierPerformance = () => {
   const [selectedTier, setSelectedTier] = useState('All');
   const [sortBy, setSortBy] = useState('reliabilityScore');
   const [sortOrder, setSortOrder] = useState('desc');
+  const [selectedSupplier, setSelectedSupplier] = useState(null);
+  const [isDetailedView, setIsDetailedView] = useState(true);
+
+  const handleViewDetails = (supplier) => {
+    setSelectedSupplier(supplier);
+  };
+
+  const closeModal = () => {
+    setSelectedSupplier(null);
+  };
+
+  const handleExport = () => {
+    const dataToExport = filteredAndSortedData.map(supplier => ({
+      'Supplier Name': supplier.name,
+      'Reliability Score': supplier.reliabilityScore,
+      'On-Time Rate': `${supplier.onTimeRate}%`,
+      'Avg Actual Delay': `${supplier.avgActualDelay} min`,
+      'Order Volume': supplier.orderVolume.toLocaleString(),
+      'Distance Efficiency': `${supplier.distanceEfficiency}%`,
+      'Tier': supplier.tier,
+      'Zones Served': supplier.zonesServed,
+      'Time Saved (RL)': `${supplier.totalRLTimeSaved} hrs`
+    }))
+
+    // Convert to CSV
+    const headers = Object.keys(dataToExport[0])
+    const csvContent = [
+      headers.join(','),
+      ...dataToExport.map(row => headers.map(header => `"${row[header]}"`).join(','))
+    ].join('\n')
+
+    // Download file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    const url = URL.createObjectURL(blob)
+    link.setAttribute('href', url)
+    link.setAttribute('download', `supplier-performance-${new Date().toISOString().split('T')[0]}.csv`)
+    link.style.visibility = 'hidden'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
 
   const supplierData = [
     {
@@ -187,6 +229,42 @@ const SupplierPerformance = () => {
       rlOptimizationRate: 89,
       reliabilityScore: 85.3,
       tier: 'Silver'
+    },
+    {
+      name: 'Supplier K',
+      avgPredictedDelay: 8,
+      avgActualDelay: 9,
+      totalRLTimeSaved: 420,
+      orderVolume: 5200,
+      avgDistance: 6.5,
+      avgWeight: 3.2,
+      highTrafficDeliveries: 65,
+      zonesServed: 3,
+      onTimeRate: 95,
+      severeDelayRate: 1,
+      weatherResilience: 96,
+      distanceEfficiency: 97,
+      rlOptimizationRate: 94,
+      reliabilityScore: 95.2,
+      tier: 'Gold'
+    },
+    {
+      name: 'Supplier L',
+      avgPredictedDelay: 28,
+      avgActualDelay: 35,
+      totalRLTimeSaved: 150,
+      orderVolume: 3200,
+      avgDistance: 14,
+      avgWeight: 6.8,
+      highTrafficDeliveries: 140,
+      zonesServed: 6,
+      onTimeRate: 65,
+      severeDelayRate: 15,
+      weatherResilience: 68,
+      distanceEfficiency: 72,
+      rlOptimizationRate: 78,
+      reliabilityScore: 68.5,
+      tier: 'Critical Review'
     }
   ];
 
@@ -337,6 +415,10 @@ const SupplierPerformance = () => {
                 <option value="onTimeRate">On-Time Rate</option>
                 <option value="orderVolume">Order Volume</option>
                 <option value="avgActualDelay">Avg Delay</option>
+                <option value="weatherResilience">Weather Resilience</option>
+                <option value="distanceEfficiency">Distance Efficiency</option>
+                <option value="rlOptimizationRate">RL Optimization</option>
+                <option value="totalRLTimeSaved">Time Saved</option>
               </select>
 
               <button
@@ -347,10 +429,26 @@ const SupplierPerformance = () => {
               </button>
             </div>
 
-            <button className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
-              <Download className="w-4 h-4" />
-              Export
-            </button>
+            <div className="flex gap-2">
+              <button 
+                onClick={() => setIsDetailedView(!isDetailedView)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+                  isDetailedView 
+                    ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                <Filter className="w-4 h-4" />
+                {isDetailedView ? 'Detailed View' : 'Compact View'}
+              </button>
+              <button 
+                onClick={handleExport}
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+              >
+                <Download className="w-4 h-4" />
+                Export
+              </button>
+            </div>
           </div>
         </div>
 
@@ -366,18 +464,34 @@ const SupplierPerformance = () => {
                   <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                     Reliability Score
                   </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                    Performance
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                    Delays
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                    Volume & Efficiency
-                  </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                    Operations
-                  </th>
+                  {isDetailedView ? (
+                    <>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                        Delay Analysis
+                      </th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                        Performance Rates
+                      </th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                        Weather & Distance
+                      </th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                        RL Optimization
+                      </th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                        Volume & Operations
+                      </th>
+                    </>
+                  ) : (
+                    <>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                        Performance
+                      </th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                        Orders & Efficiency
+                      </th>
+                    </>
+                  )}
                   <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                     Tier
                   </th>
@@ -420,47 +534,162 @@ const SupplierPerformance = () => {
                           ></div>
                         </div>
                       </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm">
-                        <div className={`font-medium ${getPerformanceColor(supplier.onTimeRate, 'onTime')}`}>
-                          {supplier.onTimeRate}% on-time
-                        </div>
-                        <div className="text-gray-500">
-                          {supplier.severeDelayRate}% severe delays
-                        </div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        Tier: {supplier.tier}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm">
-                        <div className={`font-medium ${getPerformanceColor(supplier.avgActualDelay, 'delay')}`}>
-                          {supplier.avgActualDelay} min actual
-                        </div>
-                        <div className="text-gray-500">
-                          {supplier.avgPredictedDelay} min predicted
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm">
-                        <div className="font-medium text-gray-900">
-                          {supplier.orderVolume.toLocaleString()} orders
-                        </div>
-                        <div className="text-gray-500">
-                          {supplier.distanceEfficiency}% efficiency
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm">
-                        <div className="font-medium text-gray-900">
-                          {supplier.avgDistance}km avg
-                        </div>
-                        <div className="text-gray-500">
-                          {supplier.totalRLTimeSaved}hrs saved
-                        </div>
-                      </div>
-                    </td>
+                    
+                    {/* Conditional columns based on view mode */}
+                    {isDetailedView ? (
+                      <>
+                        {/* Delay Analysis Column */}
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm space-y-1">
+                            <div className="flex justify-between items-center">
+                              <span className="text-gray-600">Predicted:</span>
+                              <span className={`font-medium ${getPerformanceColor(supplier.avgPredictedDelay, 'delay')}`}>
+                                {supplier.avgPredictedDelay}m
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-gray-600">Actual:</span>
+                              <span className={`font-medium ${getPerformanceColor(supplier.avgActualDelay, 'delay')}`}>
+                                {supplier.avgActualDelay}m
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-gray-600">Severe:</span>
+                              <span className={`font-medium ${supplier.severeDelayRate <= 3 ? 'text-green-600' : supplier.severeDelayRate <= 6 ? 'text-yellow-600' : 'text-red-600'}`}>
+                                {supplier.severeDelayRate}%
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Performance Rates Column */}
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm space-y-1">
+                            <div className="flex justify-between items-center">
+                              <span className="text-gray-600">On-Time:</span>
+                              <span className={`font-medium ${getPerformanceColor(supplier.onTimeRate, 'onTime')}`}>
+                                {supplier.onTimeRate}%
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-gray-600">High Traffic:</span>
+                              <span className="font-medium text-gray-700">
+                                {supplier.highTrafficDeliveries}
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-gray-600">Zones:</span>
+                              <span className="font-medium text-gray-700">
+                                {supplier.zonesServed}
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Weather & Distance Column */}
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm space-y-1">
+                            <div className="flex justify-between items-center">
+                              <span className="text-gray-600">Weather:</span>
+                              <span className={`font-medium ${getPerformanceColor(supplier.weatherResilience, 'efficiency')}`}>
+                                {supplier.weatherResilience}%
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-gray-600">Distance:</span>
+                              <span className={`font-medium ${getPerformanceColor(supplier.distanceEfficiency, 'efficiency')}`}>
+                                {supplier.distanceEfficiency}%
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-gray-600">Avg Dist:</span>
+                              <span className="font-medium text-gray-700">
+                                {supplier.avgDistance}km
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* RL Optimization Column */}
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm space-y-1">
+                            <div className="flex justify-between items-center">
+                              <span className="text-gray-600">RL Rate:</span>
+                              <span className={`font-medium ${getPerformanceColor(supplier.rlOptimizationRate, 'efficiency')}`}>
+                                {supplier.rlOptimizationRate}%
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-gray-600">Time Saved:</span>
+                              <span className="font-medium text-green-600">
+                                {supplier.totalRLTimeSaved}h
+                              </span>
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">
+                              ML Optimized
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Volume & Operations Column */}
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm space-y-1">
+                            <div className="flex justify-between items-center">
+                              <span className="text-gray-600">Orders:</span>
+                              <span className="font-medium text-gray-900">
+                                {(supplier.orderVolume / 1000).toFixed(1)}k
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-gray-600">Avg Weight:</span>
+                              <span className="font-medium text-gray-700">
+                                {supplier.avgWeight}kg
+                              </span>
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">
+                              Volume Score
+                            </div>
+                          </div>
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        {/* Compact Performance Column */}
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center space-x-3">
+                            <div className="flex-1">
+                              <div className="text-sm font-medium text-gray-900">
+                                <span className={getPerformanceColor(supplier.onTimeRate, 'onTime')}>
+                                  {supplier.onTimeRate}%
+                                </span> On-time
+                              </div>
+                              <div className="text-sm text-gray-500">
+                                {supplier.avgPredictedDelay}m avg delay
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Compact Orders & Efficiency Column */}
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm">
+                            <div className="text-gray-900 font-medium">
+                              {(supplier.orderVolume / 1000).toFixed(1)}k orders
+                            </div>
+                            <div className="text-gray-500">
+                              <span className={getPerformanceColor(supplier.rlOptimizationRate, 'efficiency')}>
+                                {supplier.rlOptimizationRate}%
+                              </span> efficiency
+                            </div>
+                          </div>
+                        </td>
+                      </>
+                    )}
+
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold ${getTierColor(supplier.tier)}`}>
                         {getTierIcon(supplier.tier)}
@@ -468,7 +697,10 @@ const SupplierPerformance = () => {
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <button className="text-blue-600 hover:text-blue-800 transition-colors">
+                      <button 
+                        onClick={() => handleViewDetails(supplier)}
+                        className="text-blue-600 hover:text-blue-800 transition-colors"
+                      >
                         <Eye className="w-4 h-4" />
                       </button>
                     </td>
@@ -483,6 +715,73 @@ const SupplierPerformance = () => {
         <div className="text-center text-gray-500 text-sm">
           Showing {filteredAndSortedData.length} of {supplierData.length} suppliers
         </div>
+
+        {/* Modal for supplier details */}
+        {selectedSupplier && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-96 overflow-y-auto">
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-xl font-semibold text-gray-900">Supplier Performance Details</h3>
+                  <button 
+                    onClick={closeModal}
+                    className="text-gray-400 hover:text-gray-600 transition-colors"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div>
+                    <h4 className="font-medium text-gray-900 mb-3">Basic Information</h4>
+                    <div className="space-y-2 text-sm">
+                      <div><span className="font-medium">Name:</span> {selectedSupplier.name}</div>
+                      <div><span className="font-medium">Tier:</span> 
+                        <span className={`ml-2 px-2 py-1 rounded-full text-xs ${getTierColor(selectedSupplier.tier)}`}>
+                          {selectedSupplier.tier}
+                        </span>
+                      </div>
+                      <div><span className="font-medium">Zones Served:</span> {selectedSupplier.zonesServed}</div>
+                      <div><span className="font-medium">Order Volume:</span> {selectedSupplier.orderVolume.toLocaleString()}</div>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <h4 className="font-medium text-gray-900 mb-3">Performance Metrics</h4>
+                    <div className="space-y-2 text-sm">
+                      <div><span className="font-medium">Reliability Score:</span> {selectedSupplier.reliabilityScore}</div>
+                      <div><span className="font-medium">On-Time Rate:</span> {selectedSupplier.onTimeRate}%</div>
+                      <div><span className="font-medium">Severe Delay Rate:</span> {selectedSupplier.severeDelayRate}%</div>
+                      <div><span className="font-medium">Distance Efficiency:</span> {selectedSupplier.distanceEfficiency}%</div>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <h4 className="font-medium text-gray-900 mb-3">Operational Data</h4>
+                    <div className="space-y-2 text-sm">
+                      <div><span className="font-medium">Avg Distance:</span> {selectedSupplier.avgDistance} km</div>
+                      <div><span className="font-medium">Avg Weight:</span> {selectedSupplier.avgWeight} kg</div>
+                      <div><span className="font-medium">Weather Resilience:</span> {selectedSupplier.weatherResilience}%</div>
+                      <div><span className="font-medium">RL Time Saved:</span> {selectedSupplier.totalRLTimeSaved} hrs</div>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="mt-6">
+                  <h4 className="font-medium text-gray-900 mb-3">Delivery Analysis</h4>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div><span className="font-medium">Avg Predicted Delay:</span> {selectedSupplier.avgPredictedDelay} min</div>
+                    <div><span className="font-medium">Avg Actual Delay:</span> {selectedSupplier.avgActualDelay} min</div>
+                    <div><span className="font-medium">High Traffic Deliveries:</span> {selectedSupplier.highTrafficDeliveries}</div>
+                    <div><span className="font-medium">RL Optimization Rate:</span> {selectedSupplier.rlOptimizationRate}%</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

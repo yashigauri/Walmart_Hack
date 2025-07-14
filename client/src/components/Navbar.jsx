@@ -1,10 +1,12 @@
 import React from 'react'
+import { useState } from 'react'
 import {
   User,
   Settings,
 } from 'lucide-react'
 
 const Navbar = ({ currentPage, onPageChange }) => {
+  const [showSettings, setShowSettings] = useState(false)
 
   const navigation = [
     { id: 'cost-analysis', label: 'Cost Analysis' },
@@ -56,7 +58,10 @@ const Navbar = ({ currentPage, onPageChange }) => {
         <div className="flex items-center space-x-4">
 
           {/* Settings */}
-          <button className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors">
+          <button 
+            onClick={() => setShowSettings(true)}
+            className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+          >
             <Settings className="w-5 h-5" />
           </button>
 
@@ -72,6 +77,77 @@ const Navbar = ({ currentPage, onPageChange }) => {
           </div>
         </div>
       </div>
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xl font-semibold text-gray-900">Settings</h3>
+                <button 
+                  onClick={() => setShowSettings(false)}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              
+              <div className="space-y-4">
+                <div>
+                  <h4 className="font-medium text-gray-900 mb-2">Application Settings</h4>
+                  <div className="space-y-3">
+                    <label className="flex items-center justify-between">
+                      <span className="text-sm text-gray-700">Dark Mode</span>
+                      <input type="checkbox" className="rounded" />
+                    </label>
+                    <label className="flex items-center justify-between">
+                      <span className="text-sm text-gray-700">Notifications</span>
+                      <input type="checkbox" className="rounded" defaultChecked />
+                    </label>
+                    <label className="flex items-center justify-between">
+                      <span className="text-sm text-gray-700">Auto-refresh Data</span>
+                      <input type="checkbox" className="rounded" defaultChecked />
+                    </label>
+                  </div>
+                </div>
+                
+                <div>
+                  <h4 className="font-medium text-gray-900 mb-2">Data Preferences</h4>
+                  <div className="space-y-3">
+                    <label className="block">
+                      <span className="text-sm text-gray-700">Refresh Interval</span>
+                      <select className="mt-1 block w-full rounded-md border-gray-300 text-sm">
+                        <option>30 seconds</option>
+                        <option>1 minute</option>
+                        <option>5 minutes</option>
+                        <option>10 minutes</option>
+                      </select>
+                    </label>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="mt-6 flex justify-end space-x-3">
+                <button 
+                  onClick={() => setShowSettings(false)}
+                  className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={() => setShowSettings(false)}
+                  className="px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </header>
   )
 }

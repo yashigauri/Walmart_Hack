@@ -6,6 +6,51 @@ const CostAnalysis = () => {
   const [sortBy, setSortBy] = useState('cost');
   const [sortOrder, setSortOrder] = useState('desc');
   const [filterBy, setFilterBy] = useState('all');
+  const [selectedDelivery, setSelectedDelivery] = useState(null);
+
+  const handleViewDetails = (delivery) => {
+    setSelectedDelivery(delivery);
+  };
+
+  const closeModal = () => {
+    setSelectedDelivery(null);
+  };
+
+  const handleExport = () => {
+    const dataToExport = filteredAndSortedData.map(delivery => ({
+      'Order ID': delivery.orderId,
+      'Cost': `₹${delivery.cost}`,
+      'Distance': `${delivery.distance} km`,
+      'Duration': `${delivery.duration} min`,
+      'Cost Per KM': `₹${delivery.costPerKm}`,
+      'Anomaly Type': delivery.anomalyType,
+      'Status': delivery.status,
+      'Supplier': delivery.supplier
+    }))
+
+    // Convert to CSV
+    const headers = Object.keys(dataToExport[0])
+    const csvContent = [
+      headers.join(','),
+      ...dataToExport.map(row => headers.map(header => `"${row[header]}"`).join(','))
+    ].join('\n')
+
+    // Download file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    const url = URL.createObjectURL(blob)
+    link.setAttribute('href', url)
+    link.setAttribute('download', `cost-analysis-${new Date().toISOString().split('T')[0]}.csv`)
+    link.style.visibility = 'hidden'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
+  const handleAnalytics = () => {
+    // Mock analytics action
+    alert('Opening detailed analytics dashboard...')
+  }
 
   const expensiveDeliveries = [
     {
@@ -264,11 +309,17 @@ const CostAnalysis = () => {
             </div>
 
             <div className="flex gap-2">
-              <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+              <button 
+                onClick={handleAnalytics}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
                 <PieChart className="w-4 h-4" />
                 Analytics
               </button>
-              <button className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
+              <button 
+                onClick={handleExport}
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+              >
                 <Download className="w-4 h-4" />
                 Export
               </button>
@@ -360,7 +411,10 @@ const CostAnalysis = () => {
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <button className="text-emerald-600 hover:text-emerald-800 transition-colors">
+                      <button 
+                        onClick={() => handleViewDetails(delivery)}
+                        className="text-emerald-600 hover:text-emerald-800 transition-colors"
+                      >
                         <Eye className="w-4 h-4" />
                       </button>
                     </td>
@@ -375,6 +429,62 @@ const CostAnalysis = () => {
         <div className="text-center text-gray-500 text-sm">
           Showing {filteredAndSortedData.length} of {expensiveDeliveries.length} expensive deliveries
         </div>
+
+        {/* Modal for delivery details */}
+        {selectedDelivery && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-96 overflow-y-auto">
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-xl font-semibold text-gray-900">Delivery Details</h3>
+                  <button 
+                    onClick={closeModal}
+                    className="text-gray-400 hover:text-gray-600 transition-colors"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-6">
+                  <div>
+                    <h4 className="font-medium text-gray-900 mb-3">Order Information</h4>
+                    <div className="space-y-2 text-sm">
+                      <div><span className="font-medium">Order ID:</span> {selectedDelivery.orderId}</div>
+                      <div><span className="font-medium">Supplier:</span> {selectedDelivery.supplier}</div>
+                      <div><span className="font-medium">Status:</span> 
+                        <span className={`ml-2 px-2 py-1 rounded-full text-xs ${getStatusColor(selectedDelivery.status)}`}>
+                          {selectedDelivery.status}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <h4 className="font-medium text-gray-900 mb-3">Cost Analysis</h4>
+                    <div className="space-y-2 text-sm">
+                      <div><span className="font-medium">Total Cost:</span> ₹{selectedDelivery.cost}</div>
+                      <div><span className="font-medium">Cost per KM:</span> ₹{selectedDelivery.costPerKm}</div>
+                      <div><span className="font-medium">Distance:</span> {selectedDelivery.distance} km</div>
+                      <div><span className="font-medium">Duration:</span> {selectedDelivery.duration} min</div>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="mt-6">
+                  <h4 className="font-medium text-gray-900 mb-3">Anomaly Information</h4>
+                  <div className="flex items-center gap-2">
+                    <span className={`px-3 py-1 rounded-full text-sm font-medium ${getAnomalyColor(selectedDelivery.anomalyType)}`}>
+                      {selectedDelivery.anomalyType} anomaly
+                    </span>
+                    <span className="text-sm text-gray-600">detected in this delivery</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

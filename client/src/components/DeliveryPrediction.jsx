@@ -1,6 +1,6 @@
 import React from 'react'
 import { useState } from 'react'
-import { ChevronDown, Package, Clock, MapPin, Cloud, Weight, Route, Truck } from 'lucide-react'
+import { ChevronDown, Package, Clock, MapPin, Cloud, Weight, Route, Truck, AlertCircle, CheckCircle, TrendingUp } from 'lucide-react'
 
 const DeliveryPrediction = () => {
   const [formData, setFormData] = useState({
@@ -13,6 +13,9 @@ const DeliveryPrediction = () => {
     distance: ''
   })
 
+  const [prediction, setPrediction] = useState(null)
+  const [isLoading, setIsLoading] = useState(false)
+
   const handleInputChange = (field, value) => {
     setFormData(prev => ({
       ...prev,
@@ -20,12 +23,100 @@ const DeliveryPrediction = () => {
     }))
   }
 
-  const handlePredict = () => {
-    // Handle prediction logic here
-    alert('Prediction submitted!')
+  const calculatePrediction = () => {
+    // Mock prediction calculation based on form inputs
+    let baseTime = parseInt(formData.distance) * 2 // 2 minutes per km base
+    let delayFactor = 0
+
+    // Traffic impact
+    switch(formData.trafficLevel) {
+      case 'low': delayFactor += 0; break;
+      case 'medium': delayFactor += 0.3; break;
+      case 'high': delayFactor += 0.6; break;
+      case 'very-high': delayFactor += 1.0; break;
+    }
+
+    // Weather impact
+    switch(formData.weatherConditions) {
+      case 'clear': delayFactor += 0; break;
+      case 'rain': delayFactor += 0.2; break;
+      case 'fog': delayFactor += 0.3; break;
+      case 'snow': delayFactor += 0.5; break;
+      case 'storm': delayFactor += 0.8; break;
+    }
+
+    // Time slot impact
+    switch(formData.timeSlot) {
+      case 'morning': delayFactor += 0.1; break;
+      case 'afternoon': delayFactor += 0.4; break;
+      case 'evening': delayFactor += 0.3; break;
+    }
+
+    // Weight impact
+    if (parseFloat(formData.weight) > 10) {
+      delayFactor += 0.2
+    }
+
+    const finalTime = Math.round(baseTime * (1 + delayFactor))
+    const confidence = Math.max(85, Math.min(98, 95 - (delayFactor * 15)))
+    
+    return {
+      estimatedTime: finalTime,
+      confidence: Math.round(confidence),
+      baseTime: baseTime,
+      delayTime: finalTime - baseTime,
+      riskLevel: delayFactor > 0.7 ? 'high' : delayFactor > 0.4 ? 'medium' : 'low',
+      recommendations: generateRecommendations(delayFactor, formData)
+    }
+  }
+
+  const generateRecommendations = (delayFactor, data) => {
+    const recommendations = []
+    
+    if (data.trafficLevel === 'high' || data.trafficLevel === 'very-high') {
+      recommendations.push("Consider alternative route to avoid traffic congestion")
+    }
+    
+    if (data.weatherConditions === 'rain' || data.weatherConditions === 'snow' || data.weatherConditions === 'storm') {
+      recommendations.push("Allow extra time due to weather conditions")
+    }
+    
+    if (data.timeSlot === 'afternoon') {
+      recommendations.push("Peak hour delivery - consider rescheduling to morning")
+    }
+    
+    if (parseFloat(data.weight) > 10) {
+      recommendations.push("Heavy package - ensure appropriate vehicle selection")
+    }
+    
+    if (delayFactor < 0.3) {
+      recommendations.push("Optimal delivery conditions - proceed as planned")
+    }
+    
+    return recommendations
+  }
+
+  const handlePredict = async () => {
+    setIsLoading(true)
+    
+    // Simulate API call delay
+    await new Promise(resolve => setTimeout(resolve, 1500))
+    
+    const result = calculatePrediction()
+    setPrediction(result)
+    setIsLoading(false)
   }
 
   const isFormValid = Object.values(formData).every(value => value !== '')
+
+  const getRiskColor = (level) => {
+    switch(level) {
+      case 'low': return 'text-green-600 bg-green-100'
+      case 'medium': return 'text-yellow-600 bg-yellow-100'
+      case 'high': return 'text-red-600 bg-red-100'
+      default: return 'text-gray-600 bg-gray-100'
+    }
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 py-12 px-4">
@@ -206,16 +297,21 @@ const DeliveryPrediction = () => {
           <div className="mt-12 text-center">
             <button
               onClick={handlePredict}
-              disabled={!isFormValid}
+              disabled={!isFormValid || isLoading}
               className={`
                 px-12 py-4 rounded-2xl font-semibold text-lg transition-all duration-200 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500
-                ${isFormValid 
+                ${isFormValid && !isLoading
                   ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:from-blue-700 hover:to-purple-700 shadow-lg hover:shadow-xl' 
                   : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                 }
               `}
             >
-              {isFormValid ? (
+              {isLoading ? (
+                <span className="flex items-center gap-2">
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Calculating...
+                </span>
+              ) : isFormValid ? (
                 <span className="flex items-center gap-2">
                   <Package className="w-5 h-5" />
                   Predict Delivery Time
@@ -226,6 +322,77 @@ const DeliveryPrediction = () => {
             </button>
           </div>
         </div>
+
+        {/* Prediction Results */}
+        {prediction && (
+          <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl border border-white/20 p-8 lg:p-12 mt-8">
+            <div className="flex items-center gap-3 mb-8">
+              <CheckCircle className="w-6 h-6 text-green-600" />
+              <h2 className="text-2xl font-semibold text-gray-900">Prediction Results</h2>
+            </div>
+
+            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+              {/* Estimated Time */}
+              <div className="bg-gradient-to-r from-blue-500 to-blue-600 rounded-xl p-6 text-white">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-blue-100 text-sm font-medium">Estimated Time</p>
+                    <p className="text-3xl font-bold">{prediction.estimatedTime} min</p>
+                  </div>
+                  <Clock className="w-8 h-8 text-blue-200" />
+                </div>
+              </div>
+
+              {/* Confidence */}
+              <div className="bg-gradient-to-r from-green-500 to-green-600 rounded-xl p-6 text-white">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-green-100 text-sm font-medium">Confidence</p>
+                    <p className="text-3xl font-bold">{prediction.confidence}%</p>
+                  </div>
+                  <TrendingUp className="w-8 h-8 text-green-200" />
+                </div>
+              </div>
+
+              {/* Delay Impact */}
+              <div className="bg-gradient-to-r from-orange-500 to-orange-600 rounded-xl p-6 text-white">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-orange-100 text-sm font-medium">Delay Factor</p>
+                    <p className="text-3xl font-bold">+{prediction.delayTime} min</p>
+                  </div>
+                  <AlertCircle className="w-8 h-8 text-orange-200" />
+                </div>
+              </div>
+
+              {/* Risk Level */}
+              <div className="bg-white rounded-xl p-6 border border-gray-200">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-gray-600 text-sm font-medium">Risk Level</p>
+                    <span className={`inline-block px-3 py-1 rounded-full text-sm font-semibold capitalize ${getRiskColor(prediction.riskLevel)}`}>
+                      {prediction.riskLevel}
+                    </span>
+                  </div>
+                  <Package className="w-8 h-8 text-gray-400" />
+                </div>
+              </div>
+            </div>
+
+            {/* Recommendations */}
+            <div className="bg-gray-50 rounded-xl p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Recommendations</h3>
+              <div className="space-y-2">
+                {prediction.recommendations.map((rec, index) => (
+                  <div key={index} className="flex items-start gap-3">
+                    <CheckCircle className="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
+                    <p className="text-gray-700">{rec}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Additional Info Cards */}
         <div className="grid md:grid-cols-3 gap-6 mt-8">
