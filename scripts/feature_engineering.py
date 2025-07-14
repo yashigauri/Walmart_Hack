@@ -1,93 +1,107 @@
-import pandas as pd
-import numpy as np
-from sklearn.preprocessing import LabelEncoder, StandardScaler
-import joblib
+# scripts/enhanced_feature_engineering.py
+
 import os
+import logging
+from typing import Tuple
+import numpy as np
+import pandas as pd
 
-ENCODER_PATH = "utils/encoders.pkl"
-SCALER_PATH = "utils/scaler.pkl"
+# ── Logging ───────────────────────────────────────────────────────────────
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
 
-def label_delay(time):
-    if time <= 40:
-        return "On Time"
-    elif time <= 70:
-        return "Delayed"
-    else:
-        return "Very Delayed"
+# ── Paths ──────────────────────────────────────────────────────────────────
+INPUT_PATH  = "data/lade_delivery_cleaned.csv"
+OUTPUT_PATH = "data/lade_delivery_enhanced.csv"
 
-def feature_engineer(input_file="data/smart_combination_dataset.csv", output_file="data/feature_data.csv"):
-    df = pd.read_csv(input_file)
-    df["delay_label"] = df["actual_time_min"].apply(label_delay)
+# ── 1. Load ────────────────────────────────────────────────────────────────
+def load_data() -> pd.DataFrame:
+    if not os.path.exists(INPUT_PATH):
+        raise FileNotFoundError(f"{INPUT_PATH} not found.")
+    df = pd.read_csv(INPUT_PATH)
+    logger.info("Loaded %d rows × %d columns", *df.shape)
+    return df
 
-    # Encode categorical features
-    cat_cols = ['from_zone', 'to_zone', 'time_slot', 'traffic', 'weather']
-    encoders = {}
-    for col in cat_cols:
-        le = LabelEncoder()
-        df[col] = le.fit_transform(df[col])
-        encoders[col] = le
+# ── 2. Feature Engineering ────────────────────────────────────────────────
+def add_features(df: pd.DataFrame) -> pd.DataFrame:
+    logger.info("Adding engineered features...")
 
-    # Create feature matrix X for scaling
-    X = df[["from_zone", "to_zone", "time_slot", "traffic", "weather", "weight_kg", "distance_km"]]
-    
-    # Scale ALL features (not just numerical ones)
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
-    
-    # Replace the original columns with scaled values
-    df[["from_zone", "to_zone", "time_slot", "traffic", "weather", "weight_kg", "distance_km"]] = X_scaled
+    # Safe, interpretable features only — no target leakage
+    df["weight_per_km"] = np.where(
+        df["distance_km"] > 0,
+        df["weight_kg"] / df["distance_km"],
+        0,
+    )
 
-    # Save encoders and scaler
-    os.makedirs("utils", exist_ok=True)
-    joblib.dump(encoders, ENCODER_PATH)
-    joblib.dump(scaler, SCALER_PATH)
+    df["weight_category"] = pd.cut(
+        df["weight_kg"],
+        bins=[0, 50, 200, 400, 600, float("inf")],
+        labels=["very_light", "light", "medium", "heavy", "very_heavy"]
+    ).astype(str)
 
-    df.to_csv(output_file, index=False)
-    print(f"✅ Feature-engineered data saved to '{output_file}'")
-    print(f"✅ Encoders saved to '{ENCODER_PATH}'")
-    print(f"✅ Scaler saved to '{SCALER_PATH}'")
+    df["distance_category"] = pd.cut(
+        df["distance_km"],
+        bins=[0, 2, 5, 10, 20, float("inf")],
+        labels=["very_short", "short", "medium", "long", "very_long"]
+    ).astype(str)
 
-def transform_features(df, encoders, for_training=False):
-    """Transform input DataFrame using saved encoders and return only model input features."""
-    df = df.copy()
+    df["same_zone"] = (df["from_zone"] == df["to_zone"]).astype(np.int8)
+    df["zone_pair"] = df["from_zone"].astype(str) + "-" + df["to_zone"].astype(str)
 
-    # Apply label encoding to categorical features
-    for col, le in encoders.items():
-        if col in df.columns:
-            try:
-                df[col] = le.transform(df[col])
-            except ValueError as e:
-                print(f"Warning: Unknown category in {col}. Using first class as default.")
-                # Handle unknown categories by using the first class
-                unknown_mask = ~df[col].isin(le.classes_)
-                df.loc[unknown_mask, col] = le.classes_[0]
-                df[col] = le.transform(df[col])
+    df["delay_label"] = (df["actual_time_min"] > 90).astype(np.int8)
+    df["severe_delay_label"] = (df["actual_time_min"] > 180).astype(np.int8)
 
-    # Select the same features that were used during training
-    feature_columns = ["from_zone", "to_zone", "time_slot", "traffic", "weather", "weight_kg", "distance_km"]
-    
-    # Check if all required columns exist
-    missing_cols = [col for col in feature_columns if col not in df.columns]
-    if missing_cols:
-        raise ValueError(f"Missing required columns: {missing_cols}")
-    
-    X = df[feature_columns]
-    
-    # Handle any NaN values
-    X = X.fillna(0)
-    
-    return X
+    logger.info("Feature set expanded to %d columns.", df.shape[1])
+    return df
 
-def load_encoders_and_scaler():
-    """Load saved encoders and scaler."""
-    try:
-        encoders = joblib.load(ENCODER_PATH)
-        scaler = joblib.load(SCALER_PATH)
-        return encoders, scaler
-    except FileNotFoundError as e:
-        print(f"Error loading encoders/scaler: {e}")
-        print("Make sure to run feature_engineer() first to create the encoders and scaler.")
-        return None, None
+# ── 3. Anomaly Detection ───────────────────────────────────────────────────
+def _iqr_flag(series: pd.Series, k: float = 1.5) -> pd.Series:
+    q1, q3 = series.quantile([0.25, 0.75])
+    iqr = q3 - q1
+    return ((series < q1 - k * iqr) | (series > q3 + k * iqr)).astype(np.int8)
+
+def detect_anomalies(df: pd.DataFrame) -> pd.DataFrame:
+    logger.info("Detecting anomalies...")
+    df["time_anomaly"]   = _iqr_flag(df["actual_time_min"])
+    df["dist_anomaly"]   = _iqr_flag(df["distance_km"])
+    df["weight_anomaly"] = _iqr_flag(df["weight_kg"])
+    df["is_anomaly"] = (
+        df[["time_anomaly", "dist_anomaly", "weight_anomaly"]].sum(axis=1) > 0
+    ).astype(np.int8)
+    logger.info("Flagged %d anomalous records.", df["is_anomaly"].sum())
+    return df
+
+# ── 4. Optimise Dtypes ─────────────────────────────────────────────────────
+def optimise_dtypes(df: pd.DataFrame) -> pd.DataFrame:
+    logger.info("Optimising dtypes...")
+    for col in df.select_dtypes("int64"):
+        df[col] = pd.to_numeric(df[col], downcast="integer")
+    for col in df.select_dtypes("float64"):
+        df[col] = pd.to_numeric(df[col], downcast="float")
+    for cat in ["weight_category", "distance_category", "time_slot", "zone_pair"]:
+        if cat in df.columns:
+            df[cat] = df[cat].astype("category")
+    return df
+
+# ── 5. Save ────────────────────────────────────────────────────────────────
+def save(df: pd.DataFrame) -> None:
+    os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
+    df.to_csv(OUTPUT_PATH, index=False)
+    logger.info("Saved → %s", OUTPUT_PATH)
+    logger.info("Anomaly rate: %.2f %%", 100 * df["is_anomaly"].mean())
+    logger.info("Delay   rate: %.2f %%", 100 * df["delay_label"].mean())
+
+# ── 6. Main ────────────────────────────────────────────────────────────────
+def main() -> Tuple[str, str]:
+    df = load_data()
+    df = add_features(df)
+    df = detect_anomalies(df)
+    df = optimise_dtypes(df)
+    save(df)
+    return (OUTPUT_PATH, "✅ Feature engineering complete!")
 
 if __name__ == "__main__":
-    feature_engineer()
+    main()

@@ -1,122 +1,124 @@
-# rl_agent/environment.py
+"""
+DeliveryEnv — contextual‑bandit environment for smart rerouting
+action 0 : keep current plan
+action 1 : moderate reroute   (lower risk, small cost)
+action 2 : aggressive reroute (highest cost, highest benefit)
+Reward is + if we cut delay risk / travel time, – if we hurt it.
+"""
+import numpy as np, pandas as pd
+from math import log1p
+import gymnasium as gym
+from gymnasium import spaces
 
-import gym
-import numpy as np
-import pandas as pd
-from gym import spaces
+
+_NUMERIC = [
+    "distance_km", "weight_kg", "same_zone",
+    "efficiency_km_per_min", "distance_per_kg", "avg_speed_kmh",
+    "log_distance", "weight_to_distance_ratio",
+]
+_OBS_DIM = len(_NUMERIC) + 4  # + traffic + weather + two 1‑hot flags
+
 
 class DeliveryEnv(gym.Env):
-    def __init__(self, delivery_df):
-        super(DeliveryEnv, self).__init__()
-        self.df = delivery_df.copy()
-        self.current_index = 0
+    metadata: dict = {"render.modes": []}
 
-        # Create predicted_time_min if it doesn't exist
-        if 'predicted_time_min' not in self.df.columns:
-            # Simple prediction: base time from distance + traffic factor
-            # You can replace this with your actual ML model predictions
-            base_time = self.df['distance_km'] * 2  # 2 minutes per km
-            traffic_factor = 1 + (self.df['traffic'] * 0.5)  # traffic adds delay
-            weather_factor = 1 + (self.df['weather'] * 0.2)  # weather adds delay
-            weight_factor = 1 + (self.df['weight_kg'] / 100)  # weight adds delay
-            
-            self.df['predicted_time_min'] = base_time * traffic_factor * weather_factor * weight_factor
+    def __init__(self, delivery_df: pd.DataFrame):
+        super().__init__()
+        self.df = delivery_df.copy().reset_index(drop=True)
+        self._prep_features()
+        # ── observation & action spaces ─────────────────────
+        self.observation_space = spaces.Box(
+            low=0.0, high=1.0, shape=(_OBS_DIM,), dtype=np.float32
+        )
+        self.action_space = spaces.Discrete(3)  # 0/1/2
 
-        # Add zone_importance if missing
-        if 'zone_importance' not in self.df.columns:
-            self.df['zone_importance'] = self.df['from_zone'] * 2 + self.df['to_zone']
+    # --------------------------------------------------------------------- utils
+    def _prep_features(self):
+        """feature engineering & normalisation stats (min–max)."""
+        if "delay_label" not in self.df:
+            self.df["delay_label"] = (self.df["actual_time_min"] > 90).astype(int)
 
-        # Define observation and action spaces
-        self.observation_space = spaces.Box(low=0, high=1, shape=(4,), dtype=np.float32)  # [location, traffic, delay_status, zone_importance]
-        self.action_space = spaces.Discrete(3)  # 0: Continue, 1: Reroute_A, 2: Reroute_B
+        # replicate features from train_model.py
+        self.df["efficiency_km_per_min"] = self.df["distance_km"] / (
+            self.df["actual_time_min"] + 1
+        )
+        self.df["distance_per_kg"] = self.df["distance_km"] / (
+            self.df["weight_kg"] + 1
+        )
+        self.df["avg_speed_kmh"] = self.df["distance_km"] / (
+            (self.df["actual_time_min"] + 1) / 60
+        )
+        self.df["log_distance"] = self.df["distance_km"].apply(log1p)
+        self.df["weight_to_distance_ratio"] = self.df["weight_kg"] / (
+            self.df["distance_km"] + 1
+        )
+        # default columns if missing
+        self.df["traffic"] = self.df.get("traffic", 0.5)
+        self.df["weather"] = self.df.get("weather", 0.5)
+        self.df["time_slot"] = self.df.get("time_slot", "morning")
+        self.df["weight_category"] = self.df.get("weight_category", "medium")
 
-    def reset(self):
-        self.current_index = np.random.randint(0, len(self.df))
-        obs = self._get_obs()
-        return obs
+        # stats for min‑max scaling
+        self.stats = {c: (self.df[c].min(), self.df[c].max()) for c in _NUMERIC}
 
-    def _get_obs(self):
-        row = self.df.iloc[self.current_index]
-        return np.array([
-            row['from_zone'] / 3,  # Normalize assuming max zone is 3
-            row['traffic'],  # Already normalized 0-1
-            row['predicted_time_min'] / 200,  # Normalize time
-            row.get('zone_importance', 5) / 10  # Normalize zone importance
-        ], dtype=np.float32)
+    def _norm(self, v, col):
+        mn, mx = self.stats[col]
+        return 0.0 if mx == mn else (v - mn) / (mx - mn)
 
-    def step(self, action):
-        row = self.df.iloc[self.current_index]
-        predicted_delay = row["predicted_time_min"]
-        actual_time = row["actual_time_min"]
-        delay_label = row["delay_label"]
-        
-        # Calculate reward based on action and actual outcome
-        if action == 0:  # Continue with original route
-            if delay_label == 'On Time':
-                reward = 10.0  # Good decision
-            elif delay_label == 'Delayed':
-                reward = -5.0  # Moderate penalty
-            else:  # Very Delayed
-                reward = -15.0  # High penalty
-        elif action == 1:  # Reroute via A (conservative, 10% improvement)
-            if delay_label == 'Very Delayed':
-                reward = 8.0  # Good preventive action
-            elif delay_label == 'Delayed':
-                reward = 3.0  # Reasonable action
-            else:  # On Time
-                reward = -2.0  # Unnecessary reroute
-        else:  # Reroute via B (aggressive, 15% improvement)
-            if delay_label == 'Very Delayed':
-                reward = 12.0  # Excellent preventive action
-            elif delay_label == 'Delayed':
-                reward = 1.0  # Reasonable action
-            else:  # On Time
-                reward = -5.0  # Unnecessary aggressive reroute
+    def _make_obs(self, row: pd.Series) -> np.ndarray:
+        obs = [
+            self._norm(row[c], c) for c in _NUMERIC
+        ] + [
+            float(row["traffic"]),
+            float(row["weather"]),
+            1.0 if row["time_slot"] == "morning" else 0.0,
+            1.0 if row["weight_category"] == "heavy" else 0.0,
+        ]
+        return np.asarray(obs, dtype=np.float32)
 
-        # Add penalty for prediction error
-        prediction_error = abs(actual_time - predicted_delay) / max(actual_time, 1)
-        reward -= prediction_error * 2
+    # ---------------------------------------------------------------- gym API
+    def reset(self, *, seed=None, options=None):
+        super().reset(seed=seed)
+        self.idx = self.np_random.integers(0, len(self.df))
+        self.cur = self.df.iloc[self.idx]
+        self.base_delay_flag = int(self.cur["delay_label"])
+        obs = self._make_obs(self.cur)
+        return obs, {}
 
-        done = True
+    def step(self, action: int):
+        """
+        Reward structure (simple but aligns with old prototype):
+            • Keeping an on‑time parcel ⇒ +10
+            • Keeping a delayed parcel ⇒ –10
+            • Reroute_A   (1):
+                  if delayed →  +8  | else −3
+            • Reroute_B   (2):
+                  if delayed → +12 | else −8
+        Small shaping bonuses based on efficiency / load difficulty.
+        """
+        delayed = self.base_delay_flag
+        if action == 0:
+            rew = 10 if delayed == 0 else -10
+        elif action == 1:
+            rew = 8 if delayed == 1 else -3
+        else:
+            rew = 12 if delayed == 1 else -8
+
+        # efficiency shaping
+        if self.cur["efficiency_km_per_min"] > self.df["efficiency_km_per_min"].mean():
+            rew += 2
+        elif self.cur["efficiency_km_per_min"] < 0.7 * self.df["efficiency_km_per_min"].mean():
+            rew -= 2
+        # load difficulty penalty
+        if self.cur["weight_to_distance_ratio"] > 1.5 * self.df["weight_to_distance_ratio"].mean():
+            rew -= 1
+
         info = {
-            'delivery_id': row['delivery_id'],
-            'actual_delay': actual_time,
-            'predicted_delay': predicted_delay,
-            'delay_label': delay_label
+            "delivery_id": self.cur.get("delivery_id", f"row_{self.idx}"),
+            "delay": bool(delayed),
+            "action": action,
+            "reward_components": rew
         }
-        
-        return self._get_obs(), reward, done, info
-
-    def render(self, mode='human'):
-        """Render environment (optional)"""
-        row = self.df.iloc[self.current_index]
-        print(f"Delivery {row['delivery_id']}: {row['from_zone']} -> {row['to_zone']}")
-        print(f"Traffic: {row['traffic']:.2f}, Distance: {row['distance_km']:.1f}km")
-        print(f"Predicted: {row['predicted_time_min']:.1f}min, Actual: {row['actual_time_min']:.1f}min")
-        print(f"Status: {row['delay_label']}")
-
-# Test the environment if run directly
-if __name__ == "__main__":
-    # Create some dummy data for testing
-    test_data = pd.DataFrame({
-        'delivery_id': ['A', 'B', 'C', 'D', 'E'],
-        'from_zone': [1, 2, 3, 1, 2],
-        'to_zone': [2, 3, 1, 3, 1],
-        'time_slot': [0, 1, 2, 0, 1],
-        'traffic': [0.5, 0.7, 0.3, 0.8, 0.4],
-        'weather': [0.2, 0.5, 0.1, 0.8, 0.3],
-        'weight_kg': [10, 25, 15, 30, 20],
-        'distance_km': [5, 8, 3, 12, 6],
-        'actual_time_min': [45, 60, 30, 75, 40],
-        'delay_label': ['On Time', 'Delayed', 'On Time', 'Very Delayed', 'Delayed']
-    })
-    
-    env = DeliveryEnv(test_data)
-    obs = env.reset()
-    print("Initial observation:", obs)
-    
-    action = env.action_space.sample()  # Random action
-    obs, reward, done, info = env.step(action)
-    print(f"Action: {action}, Reward: {reward}, Done: {done}")
-    print("Info:", info)
-    print("Environment created successfully!")
+        obs = self._make_obs(self.cur)  # not used again (one‑step bandit)
+        terminated, truncated = True, False
+        return obs, float(rew), terminated, truncated, info

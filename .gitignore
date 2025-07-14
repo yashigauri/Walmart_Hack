@@ -1,45 +1,32 @@
-# Python
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
-*.pyo
-*.pyd
-*.so
-
-# Jupyter Notebooks checkpoints
-.ipynb_checkpoints/
+*$py.class
 
 # Environment
 .env
 .venv/
-env/
-venv/
+*.env
 
-# IDEs and OS
+# Jupyter
+.ipynb_checkpoints
+
+# Model & output artifacts
+models/
+outputs/
+*.pkl
+*.pth
+*.csv
+
+# Logs
+*.log
+
+# IDEs and editors
 .vscode/
 .idea/
+*.swp
+*.bak
+
+# System
 .DS_Store
 Thumbs.db
-
-# Model files
-models/*.pkl
-*.h5
-*.pt
-*.pth
-
-# Outputs and reports
-outputs/*.csv
-outputs/*.png
-test_*.png
-
-# Logs and temporary files
-*.log
-*.tmp
-
-# Git LFS (optional placeholder)
-.gitattributes
-
-# Data (optional - keep only raw or final data)
-data/*.csv
-
-# __init__.pyc files
-*.pyc

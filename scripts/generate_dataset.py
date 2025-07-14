@@ -1,55 +1,70 @@
-# scripts/generate_dataset.py
-
+from datasets import load_dataset
 import pandas as pd
-import numpy as np
-import itertools
-import uuid
+from datetime import datetime
+from geopy.distance import geodesic
 import os
 
-ZONES = ['ZoneA', 'ZoneB', 'ZoneC', 'ZoneD']
-TIME_SLOTS = ['Morning', 'Afternoon', 'Evening', 'Night']
-TRAFFIC_LEVELS = ['Low', 'Medium', 'High']
-WEATHER_CONDITIONS = ['Clear', 'Rainy', 'Foggy']
-WEIGHT_BINS = [1, 5, 10, 15, 20]  # kg
-DISTANCE_BINS = [2, 10, 20, 30, 40, 50]  # km
-REPEATS = 3  # simulate multiple deliveries for each combo
-OUTPUT_PATH = "data/smart_combination_dataset.csv"
 
-def generate_dataset():
-    combinations = list(itertools.product(
-        ZONES, ZONES, TIME_SLOTS, TRAFFIC_LEVELS, WEATHER_CONDITIONS, WEIGHT_BINS, DISTANCE_BINS
-    ))
-    combinations = [c for c in combinations if c[0] != c[1]]
+def enrich_datetime(time_str):
+    try:
+        if pd.isna(time_str):
+            return pd.NaT
+        return pd.to_datetime(f"2018-{time_str}", format="%Y-%m-%d %H:%M:%S", errors="coerce")
+    except Exception:
+        return pd.NaT
 
-    records = []
-    for _ in range(REPEATS):
-        for combo in combinations:
-            from_zone, to_zone, time_slot, traffic, weather, weight_kg, distance_km = combo
+def haversine(lat1, lon1, lat2, lon2):
+    return geodesic((lat1, lon1), (lat2, lon2)).km
 
-            base_time = distance_km * 2
-            traffic_factor = {'Low': 0.9, 'Medium': 1.0, 'High': 1.3}[traffic]
-            weather_factor = {'Clear': 1.0, 'Rainy': 1.2, 'Foggy': 1.3}[weather]
-            weight_factor = 1 + (weight_kg / 100)
-            noise = np.random.normal(loc=1.0, scale=0.08)
+def get_time_slot(hour):
+    if 6 <= hour < 12:
+        return "Morning"
+    elif 12 <= hour < 18:
+        return "Afternoon"
+    elif 18 <= hour < 22:
+        return "Evening"
+    else:
+        return "Night"
 
-            delay_time = round(base_time * traffic_factor * weather_factor * weight_factor * noise, 2)
+print("📥 Downloading LaDe-D from Hugging Face...")
+ds = load_dataset("Cainiao-AI/LaDe-D", split="delivery_sh")
+df = ds.to_pandas()
+print("✅ Loaded with shape:", df.shape)
+df = ds.to_pandas()
+print("✅ Loaded with shape:", df.shape)
+print("📌 Available columns:", df.columns.tolist())
 
-            records.append({
-                'delivery_id': str(uuid.uuid4())[:8],
-                'from_zone': from_zone,
-                'to_zone': to_zone,
-                'time_slot': time_slot,
-                'traffic': traffic,
-                'weather': weather,
-                'weight_kg': weight_kg,
-                'distance_km': distance_km,
-                'actual_time_min': delay_time
-            })
+# Fix datetime parsing for known time fields
+datetime_fields = ['accept_time', 'accept_gps_time', 'delivery_time', 'delivery_gps_time']
 
-    df = pd.DataFrame(records)
-    os.makedirs("data", exist_ok=True)
-    df.to_csv(OUTPUT_PATH, index=False)
-    print(f"✅ Generated {len(df)} rows → saved to '{OUTPUT_PATH}'")
+for col in datetime_fields:
+    if col in df.columns:
+        df[col] = df[col].apply(enrich_datetime)
+print("⚙ Processing features...")
 
-if __name__ == "__main__":
-    generate_dataset()
+df = df.dropna(subset=['accept_time', 'delivery_time',
+                       'accept_gps_lat', 'accept_gps_lng',
+                       'delivery_gps_lat', 'delivery_gps_lng'])
+
+df['accept_time'] = pd.to_datetime(df['accept_time'])
+df['delivery_time'] = pd.to_datetime(df['delivery_time'])
+
+df['actual_time_min'] = (df['delivery_time'] - df['accept_time']).dt.total_seconds() / 60
+df['distance_km'] = df.apply(lambda row: haversine(
+    row['accept_gps_lat'], row['accept_gps_lng'],
+    row['delivery_gps_lat'], row['delivery_gps_lng']), axis=1)
+
+df['time_slot'] = df['accept_time'].dt.hour.apply(get_time_slot)
+df['from_zone'] = df['aoi_id']
+df['to_zone'] = df['region_id']
+
+df['weight_kg'] = 5.0  # Dummy constant
+
+# Final structure
+df_cleaned = df[['order_id', 'from_zone', 'to_zone', 'time_slot',
+                  'weight_kg', 'distance_km', 'actual_time_min']]
+df_cleaned = df_cleaned.rename(columns={'order_id': 'delivery_id'})
+
+os.makedirs("data", exist_ok=True)
+df_cleaned.to_csv("data/lade_delivery_cleaned.csv", index=False)
+print("✅ Cleaned file saved to data/lade_delivery_cleaned.csv")

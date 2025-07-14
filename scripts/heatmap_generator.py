@@ -1,140 +1,138 @@
-# scripts/heatmap_generator.py
-
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-from matplotlib.colors import LinearSegmentedColormap
+# scripts/heatmap_utils.py  (RL‑pipeline 2025‑07) — pure‑Matplotlib version
 import os
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
 
-def generate_heatmap(df, output_path="outputs/zone_time_heatmap.png"):
-    """
-    Generate a heatmap showing average delivery times by zone and time slot.
-    Using your simplified approach.
-    
-    Args:
-        df: DataFrame with columns 'from_zone', 'time_slot', 'predicted_time_min'
-        output_path: Path to save the heatmap image
-    """
-    try:
-        # Ensure output directory exists only if there's a directory in the path
-        output_dir = os.path.dirname(output_path)
-        if output_dir:  # Only create directory if it's not empty
-            os.makedirs(output_dir, exist_ok=True)
-        
-        # Use predicted_time_min if available, otherwise use actual_time_min
-        time_column = 'predicted_time_min' if 'predicted_time_min' in df.columns else 'actual_time_min'
-        
-        if time_column not in df.columns:
-            print(f"❌ Neither 'predicted_time_min' nor 'actual_time_min' found in DataFrame")
-            return
-            
-        # Create a copy to avoid modifying the original
-        df_copy = df.copy()
-        
-        # Create zone_time combination
-        df_copy["zone_time"] = df_copy["from_zone"].astype(str) + "_" + df_copy["time_slot"].astype(str)
-        
-        # Calculate average delay by zone_time
-        avg_delay = df_copy.groupby("zone_time")[time_column].mean().reset_index()
-        
-        # Split zone_time back to separate columns
-        avg_delay[["zone", "time"]] = avg_delay["zone_time"].str.split("_", expand=True)
-        
-        # Create pivot table using modern pandas syntax
-        heatmap_data = avg_delay.pivot(index="zone", columns="time", values=time_column)
-        
-        # Fill NaN values with 0
-        heatmap_data = heatmap_data.fillna(0)
-        
-        # Create the heatmap
-        plt.figure(figsize=(10, 6))
-        sns.heatmap(heatmap_data, annot=True, cmap="coolwarm", fmt=".1f")
-        plt.title("Avg Predicted Delay by Zone & Time Slot")
-        plt.tight_layout()
-        plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        plt.close()
-        
-        print(f"✅ Heatmap saved to '{output_path}'")
-        
-    except Exception as e:
-        print(f"❌ Error in generate_heatmap: {e}")
-        print(f"Error type: {type(e).__name__}")
-        print(f"Available columns: {df.columns.tolist()}")
-        print(f"DataFrame shape: {df.shape}")
-        raise
 
-def generate_delay_heatmap(df, output_path="outputs/delay_heatmap.png"):
-    """
-    Generate a heatmap showing delay probability by zone and conditions.
-    
-    Args:
-        df: DataFrame with delay predictions
-        output_path: Path to save the heatmap image
-    """
-    try:
-        # Ensure output directory exists only if there's a directory in the path
-        output_dir = os.path.dirname(output_path)
-        if output_dir:  # Only create directory if it's not empty
-            os.makedirs(output_dir, exist_ok=True)
-        
-        if 'predicted_delay_label' not in df.columns:
-            print("❌ 'predicted_delay_label' not found for delay heatmap")
-            return
-            
-        # Create binary delay indicator (1 for any delay, 0 for on time)
-        df['is_delayed'] = (df['predicted_delay_label'] != 'On Time').astype(int)
-        
-        # Create heatmap by zone pair and traffic conditions
-        if 'traffic' in df.columns:
-            delay_pivot = df.pivot_table(
-                index='from_zone',
-                columns='traffic',
-                values='is_delayed',
-                aggfunc='mean'
-            ).fillna(0)
-            
-            plt.figure(figsize=(8, 6))
-            sns.heatmap(
-                delay_pivot,
-                annot=True,
-                fmt='.2f',
-                cmap='Reds',
-                cbar_kws={'label': 'Delay Probability'},
-                linewidths=0.5
-            )
-            
-            plt.title('Delay Probability by Zone and Traffic Conditions', fontsize=14, fontweight='bold')
-            plt.xlabel('Traffic Conditions', fontsize=12)
-            plt.ylabel('From Zone', fontsize=12)
-            
-            plt.tight_layout()
-            plt.savefig(output_path, dpi=300, bbox_inches='tight')
-            plt.close()
-            
-            print(f"✅ Delay heatmap saved to {output_path}")
+# ─────────────────────────── helpers ──────────────────────────────────────
+def _pivot(df: pd.DataFrame, index: str, col: str, val: str) -> pd.DataFrame:
+    """Return pivot table filled with zeros (mean aggregation)."""
+    p = df.pivot_table(index=index, columns=col, values=val, aggfunc="mean").fillna(0)
+    if col == "time_slot":
+        order = [t for t in ["Morning", "Afternoon", "Evening", "Night"] if t in p.columns]
+        p = p[order]
+    return p
+
+
+def _draw_heatmap(pivot: pd.DataFrame,
+                  title: str,
+                  cbar_label: str,
+                  out_path: str,
+                  fmt: str = ".1f"):
+    """Draw and save a numerical heatmap using pure Matplotlib."""
+    fig, ax = plt.subplots(figsize=(12, 8))
+    mesh = ax.pcolormesh(pivot.values, shading="auto")
+    cbar = fig.colorbar(mesh, ax=ax)
+    cbar.set_label(cbar_label)
+
+    for i in range(pivot.shape[0]):
+        for j in range(pivot.shape[1]):
+            ax.text(j + 0.5, i + 0.5,
+                    format(pivot.iat[i, j], fmt),
+                    va="center", ha="center", fontsize=8)
+
+    ax.set_xticks(np.arange(pivot.shape[1]) + 0.5, pivot.columns, rotation=45, ha="right")
+    ax.set_yticks(np.arange(pivot.shape[0]) + 0.5, pivot.index)
+    ax.set_xlabel(pivot.columns.name or "")
+    ax.set_ylabel(pivot.index.name or "")
+    ax.set_title(title, pad=20, fontweight="bold")
+
+    plt.tight_layout()
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    plt.savefig(out_path, dpi=300, bbox_inches="tight", facecolor="white")
+    plt.close()
+    print(f"✅ Saved: {out_path} — shape={pivot.shape}")
+
+
+# ─────────────────────────── public functions ─────────────────────────────
+def _ensure_zone_group(df: pd.DataFrame):
+    """Add a `zone_group` column for cleaner heatmaps."""
+    if "zone_group" not in df:
+        if df["from_zone"].dtype == object:
+            df["zone_group"] = df["from_zone"].astype(str).str[:3]
         else:
-            print("❌ 'traffic' column not found for delay heatmap")
-            
-    except Exception as e:
-        print(f"❌ Error in generate_delay_heatmap: {e}")
-        raise
+            df["zone_group"] = pd.qcut(df["from_zone"].astype(int), q=20, labels=False)
 
+
+def generate_heatmap(df: pd.DataFrame,
+                     output_path: str = "outputs/zone_time_heatmap.png"):
+    """Average delivery time per zone_group & time_slot."""
+    _ensure_zone_group(df)
+    time_col = next((c for c in ("predicted_time_min", "actual_time_min") if c in df), None)
+    if not time_col or "zone_group" not in df or "time_slot" not in df:
+        print("❌ Required columns missing for heatmap.")
+        return
+
+    pivot = _pivot(df, "zone_group", "time_slot", time_col)
+    _draw_heatmap(
+        pivot,
+        f"Average Delivery Time by Zone & Time Slot\n(Using {time_col})",
+        f"Avg {time_col.replace('_', ' ').title()}",
+        output_path,
+        fmt=".1f",
+    )
+
+
+def generate_delay_heatmap(df: pd.DataFrame,
+                           output_path: str = "outputs/delay_heatmap.png"):
+    """Delay probability (>90 min) by zone_group vs categorical feature."""
+    _ensure_zone_group(df)
+    if "delay_label" not in df:
+        df["delay_label"] = (df["actual_time_min"] > 90).astype(int)
+
+    for col, label in [
+        ("time_slot", "Time Slot"),
+        ("weight_category", "Weight Category"),
+        ("distance_category", "Distance Category"),
+    ]:
+        if col not in df:
+            continue
+        pivot = _pivot(df, "zone_group", col, "delay_label")
+        out = output_path.replace(".png", f"_by_{col}.png")
+        _draw_heatmap(
+            pivot,
+            f"Delay Probability by Zone & {label}\n(Delay > 90 min)",
+            "Delay Probability",
+            out,
+            fmt=".2f",
+        )
+        return
+    print("❌ No suitable categorical column found for delay heatmap.")
+
+
+def generate_performance_heatmap(df: pd.DataFrame,
+                                 output_path: str = "outputs/performance_heatmap.png"):
+    """Efficiency (km/min) by zone_group & time_slot."""
+    _ensure_zone_group(df)
+    if "efficiency_km_per_min" not in df and {"distance_km", "actual_time_min"}.issubset(df):
+        df["efficiency_km_per_min"] = df["distance_km"] / (df["actual_time_min"] + 1)
+
+    if "time_slot" not in df:
+        print("❌ 'time_slot' missing for performance heatmap.")
+        return
+
+    pivot = _pivot(df, "zone_group", "time_slot", "efficiency_km_per_min")
+    _draw_heatmap(
+        pivot,
+        "Delivery Efficiency by Zone & Time Slot\n(Higher = Better)",
+        "Efficiency (km/min)",
+        output_path,
+        fmt=".3f",
+    )
+
+
+def generate_all_heatmaps(df: pd.DataFrame, output_dir: str = "outputs/"):
+    """Generate all three heatmaps in one call."""
+    print("🎨 Generating full heatmap suite …")
+    os.makedirs(output_dir, exist_ok=True)
+    _ensure_zone_group(df)
+    generate_heatmap(df, os.path.join(output_dir, "zone_time_heatmap.png"))
+    generate_delay_heatmap(df, os.path.join(output_dir, "delay_heatmap.png"))
+    generate_performance_heatmap(df, os.path.join(output_dir, "performance_heatmap.png"))
+    print("✅ All heatmaps generated!")
+
+
+# ── CLI entry point ───────────────────────────────────────────────────────
 if __name__ == "__main__":
-    # Test the heatmap generator
-    print("🧪 Testing heatmap generator...")
-    
-    # Create sample data
-    np.random.seed(42)
-    sample_data = pd.DataFrame({
-        'from_zone': np.random.choice(['A', 'B', 'C', 'D'], 100),
-        'to_zone': np.random.choice(['A', 'B', 'C', 'D'], 100),
-        'time_slot': np.random.choice(['Morning', 'Afternoon', 'Evening'], 100),
-        'traffic': np.random.choice(['Low', 'Medium', 'High'], 100),
-        'predicted_time_min': np.random.normal(60, 20, 100),
-        'predicted_delay_label': np.random.choice(['On Time', 'Delayed', 'Very Delayed'], 100)
-    })
-    
-    generate_heatmap(sample_data, "test_heatmap.png")
-    generate_delay_heatmap(sample_data, "test_delay_heatmap.png")
-    print("Test completed!")
+    print("🔍 Heatmap utils ready – call generate_all_heatmaps(df).")
