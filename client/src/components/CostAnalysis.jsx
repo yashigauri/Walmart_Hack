@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DollarSign, Clock, MapPin, TrendingUp, AlertTriangle, Download, Filter, Search, Eye, BarChart3, PieChart } from 'lucide-react';
 
 const CostAnalysis = () => {
@@ -7,6 +7,68 @@ const CostAnalysis = () => {
   const [sortOrder, setSortOrder] = useState('desc');
   const [filterBy, setFilterBy] = useState('all');
   const [selectedDelivery, setSelectedDelivery] = useState(null);
+  const [anomaliesData, setAnomaliesData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    fetchCostData();
+  }, []);
+
+  const fetchCostData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // Fetch cost analysis data
+      const costResponse = await fetch('http://localhost:8000/cost-analysis', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({})
+      });
+
+      if (!costResponse.ok) {
+        throw new Error(`Cost analysis API failed: ${costResponse.status}`);
+      }
+
+      // Fetch cost anomalies data
+      const anomaliesResponse = await fetch('http://localhost:8000/cost-anomalies', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({})
+      });
+
+      if (!anomaliesResponse.ok) {
+        throw new Error(`Cost anomalies API failed: ${anomaliesResponse.status}`);
+      }
+
+      const anomaliesData = await anomaliesResponse.json();
+
+      // Transform and combine the data
+      const transformedData = anomaliesData.map((anomaly, index) => ({
+        orderId: `ORD${String(index + 1).padStart(6, '0')}`,
+        cost: anomaly.cost?.toFixed(2) || '0.00',
+        distance: anomaly.distance?.toFixed(1) || '0.0',
+        duration: anomaly.time_taken?.toFixed(0) || '0',
+        costPerKm: (anomaly.cost / anomaly.distance)?.toFixed(2) || '0.00',
+        anomalyType: anomaly.anomaly_type || 'unknown',
+        status: 'completed',
+        supplier: anomaly.supplier_name || `Supplier ${String.fromCharCode(65 + (index % 26))}`,
+        predictionAccuracy: anomaly.prediction_accuracy?.toFixed(2) || '0.00'
+      }));
+
+      setAnomaliesData(transformedData);
+    } catch (err) {
+      console.error('Error fetching cost data:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleViewDetails = (delivery) => {
     setSelectedDelivery(delivery);
@@ -47,63 +109,31 @@ const CostAnalysis = () => {
     document.body.removeChild(link)
   }
 
+  // Loading state component
+  const LoadingState = () => (
+    <div className="flex items-center justify-center py-20">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500 mx-auto mb-4"></div>
+        <p className="text-gray-600">Loading cost analysis data...</p>
+      </div>
+    </div>
+  );
+
+  // Error state component
+  const ErrorState = () => (
+    <div className="flex items-center justify-center py-20">
+      <div className="text-center text-red-600">
+        <AlertTriangle className="w-12 h-12 mx-auto mb-4" />
+        <p className="font-medium">Failed to load cost data</p>
+        <p className="text-sm text-gray-600 mt-2">{error}</p>
+      </div>
+    </div>
+  );
+
   const handleAnalytics = () => {
     // Mock analytics action
     alert('Opening detailed analytics dashboard...')
   }
-
-  const expensiveDeliveries = [
-    {
-      orderId: 'ORD789123',
-      cost: '250.50',
-      distance: '35.2',
-      duration: '60',
-      costPerKm: '7.12',
-      anomalyType: 'cost',
-      status: 'completed',
-      supplier: 'Supplier A'
-    },
-    {
-      orderId: 'ORD456789',
-      cost: '220.75',
-      distance: '28.5',
-      duration: '55',
-      costPerKm: '7.75',
-      anomalyType: 'duration',
-      status: 'completed',
-      supplier: 'Supplier B'
-    },
-    {
-      orderId: 'ORD123456',
-      cost: '200.00',
-      distance: '25.0',
-      duration: '50',
-      costPerKm: '8.00',
-      anomalyType: 'cost',
-      status: 'completed',
-      supplier: 'Supplier C'
-    },
-    {
-      orderId: 'ORD987654',
-      cost: '180.25',
-      distance: '20.8',
-      duration: '45',
-      costPerKm: '8.67',
-      anomalyType: 'distance',
-      status: 'completed',
-      supplier: 'Supplier D'
-    },
-    {
-      orderId: 'ORD654321',
-      cost: '160.50',
-      distance: '18.5',
-      duration: '40',
-      costPerKm: '8.68',
-      anomalyType: 'duration',
-      status: 'completed',
-      supplier: 'Supplier E'
-    }
-  ];
 
   const getAnomalyColor = (type) => {
     switch(type) {
@@ -123,7 +153,7 @@ const CostAnalysis = () => {
     }
   };
 
-  const filteredAndSortedData = expensiveDeliveries
+  const filteredAndSortedData = anomaliesData
     .filter(delivery => 
       delivery.orderId.toLowerCase().includes(searchTerm.toLowerCase()) &&
       (filterBy === 'all' || delivery.anomalyType === filterBy)
@@ -152,6 +182,11 @@ const CostAnalysis = () => {
           </p>
         </div>
 
+        {loading && <LoadingState />}
+        {error && <ErrorState />}
+        
+        {!loading && !error && (
+        <>
         {/* Key Metrics */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {/* Average Cost Card */}
@@ -427,7 +462,7 @@ const CostAnalysis = () => {
 
         {/* Footer */}
         <div className="text-center text-gray-500 text-sm">
-          Showing {filteredAndSortedData.length} of {expensiveDeliveries.length} expensive deliveries
+          Showing {filteredAndSortedData.length} of {anomaliesData.length} expensive deliveries
         </div>
 
         {/* Modal for delivery details */}
@@ -484,6 +519,8 @@ const CostAnalysis = () => {
               </div>
             </div>
           </div>
+        )}
+        </>
         )}
       </div>
     </div>

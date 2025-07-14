@@ -1,14 +1,54 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { X } from 'lucide-react'
-import zoneHeatmapImg from '../assets/zone_time_heatmap.png'
-import delayHeatmapImg from '../assets/delay_heatmap_by_time_slot.png'
 
 const ZoneTimeHeatmap = () => {
   const [images, setImages] = useState({
-    heatmapAnalysis: zoneHeatmapImg,
-    timeAnalysis: delayHeatmapImg
+    heatmapAnalysis: null,
+    timeAnalysis: null
   })
   const [modalImage, setModalImage] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  // Fetch heatmap images from API
+  useEffect(() => {
+    const fetchHeatmaps = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+
+        // First generate heatmaps
+        await fetch('http://localhost:8000/generate-heatmaps', {
+          method: 'POST',
+        })
+
+        // Then fetch the generated images
+        const [heatmapResponse, delayResponse] = await Promise.all([
+          fetch('http://localhost:8000/heatmap/zone_time_heatmap.png'),
+          fetch('http://localhost:8000/heatmap/delay_heatmap_by_time_slot.png')
+        ])
+
+        if (heatmapResponse.ok && delayResponse.ok) {
+          const heatmapBlob = await heatmapResponse.blob()
+          const delayBlob = await delayResponse.blob()
+
+          setImages({
+            heatmapAnalysis: URL.createObjectURL(heatmapBlob),
+            timeAnalysis: URL.createObjectURL(delayBlob)
+          })
+        } else {
+          throw new Error('Failed to fetch heatmap images')
+        }
+      } catch (err) {
+        console.error('Error fetching heatmaps:', err)
+        setError('Failed to load heatmap data. Please ensure the backend API is running.')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchHeatmaps()
+  }, [])
 
   const openModal = (imageData, title) => {
     setModalImage({ src: imageData, title })
@@ -43,7 +83,23 @@ const ZoneTimeHeatmap = () => {
             </div>
             <div className="p-6">
               <div className="bg-gray-100 rounded-lg h-80 flex items-center justify-center mb-4">
-                {images.heatmapAnalysis ? (
+                {loading ? (
+                  <div className="text-center text-gray-500">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+                    <p className="text-sm font-medium">Loading heatmap data...</p>
+                    <p className="text-xs">Generating analysis from backend</p>
+                  </div>
+                ) : error ? (
+                  <div className="text-center text-red-500">
+                    <div className="w-20 h-20 bg-red-100 rounded-lg mx-auto mb-4 flex items-center justify-center">
+                      <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                      </svg>
+                    </div>
+                    <p className="text-sm font-medium">Failed to Load</p>
+                    <p className="text-xs">{error}</p>
+                  </div>
+                ) : images.heatmapAnalysis ? (
                   <img 
                     src={images.heatmapAnalysis} 
                     alt="Zone Time Heatmap Analysis" 
@@ -58,7 +114,7 @@ const ZoneTimeHeatmap = () => {
                       </svg>
                     </div>
                     <p className="text-sm font-medium">Zone Heatmap</p>
-                    <p className="text-xs">Image will be loaded from backend</p>
+                    <p className="text-xs">No data available</p>
                   </div>
                 )}
               </div>
@@ -96,7 +152,23 @@ const ZoneTimeHeatmap = () => {
             </div>
             <div className="p-6">
               <div className="bg-gray-100 rounded-lg h-80 flex items-center justify-center mb-4">
-                {images.timeAnalysis ? (
+                {loading ? (
+                  <div className="text-center text-gray-500">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500 mx-auto mb-4"></div>
+                    <p className="text-sm font-medium">Loading delay analysis...</p>
+                    <p className="text-xs">Processing time slot data</p>
+                  </div>
+                ) : error ? (
+                  <div className="text-center text-red-500">
+                    <div className="w-20 h-20 bg-red-100 rounded-lg mx-auto mb-4 flex items-center justify-center">
+                      <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                      </svg>
+                    </div>
+                    <p className="text-sm font-medium">Failed to Load</p>
+                    <p className="text-xs">{error}</p>
+                  </div>
+                ) : images.timeAnalysis ? (
                   <img 
                     src={images.timeAnalysis} 
                     alt="Delay Heatmap by Time Slot" 
@@ -111,7 +183,7 @@ const ZoneTimeHeatmap = () => {
                       </svg>
                     </div>
                     <p className="text-sm font-medium">Time Analysis Chart</p>
-                    <p className="text-xs">Image will be loaded from backend</p>
+                    <p className="text-xs">No data available</p>
                   </div>
                 )}
               </div>

@@ -15,6 +15,7 @@ const DeliveryPrediction = () => {
 
   const [prediction, setPrediction] = useState(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState(null)
 
   const handleInputChange = (field, value) => {
     setFormData(prev => ({
@@ -23,7 +24,81 @@ const DeliveryPrediction = () => {
     }))
   }
 
-  const calculatePrediction = () => {
+  const calculatePrediction = async () => {
+    if (!formData.fromZone || !formData.toZone || !formData.distance || !formData.weight) {
+      setError('Please fill in all required fields');
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      // Prepare data for API call
+      const apiData = {
+        distance: parseFloat(formData.distance) || 0,
+        weight: parseFloat(formData.weight) || 0,
+        traffic_level: formData.trafficLevel || 'medium',
+        weather_conditions: formData.weatherConditions || 'clear',
+        time_slot: formData.timeSlot || 'morning',
+        from_zone: formData.fromZone,
+        to_zone: formData.toZone
+      };
+
+      const response = await fetch('http://localhost:8000/predict', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(apiData)
+      });
+
+      if (!response.ok) {
+        throw new Error(`Prediction API failed: ${response.status}`);
+      }
+
+      const result = await response.json();
+      
+      // Transform API response to match our UI expectations
+      const transformedPrediction = {
+        estimatedTime: Math.round(result.predicted_time || 0),
+        confidence: Math.round((result.confidence || 0.85) * 100),
+        factors: [
+          { name: 'Distance', impact: 'high', value: `${formData.distance} km` },
+          { name: 'Traffic', impact: getImpactLevel(formData.trafficLevel), value: formData.trafficLevel },
+          { name: 'Weather', impact: getImpactLevel(formData.weatherConditions), value: formData.weatherConditions },
+          { name: 'Weight', impact: getWeightImpact(formData.weight), value: `${formData.weight} kg` }
+        ],
+        reliability: result.reliability_score || 'high',
+        alternativeRoutes: result.alternative_routes || 0,
+        estimatedCost: result.estimated_cost || Math.round(parseFloat(formData.distance) * 12.5)
+      };
+
+      setPrediction(transformedPrediction);
+    } catch (err) {
+      console.error('Error calculating prediction:', err);
+      setError(err.message);
+      // Fallback to mock calculation if API fails
+      mockCalculatePrediction();
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const getImpactLevel = (value) => {
+    if (value === 'low' || value === 'clear') return 'low';
+    if (value === 'medium' || value === 'rain') return 'medium';
+    return 'high';
+  };
+
+  const getWeightImpact = (weight) => {
+    const w = parseFloat(weight);
+    if (w < 5) return 'low';
+    if (w < 15) return 'medium';
+    return 'high';
+  };
+
+  const mockCalculatePrediction = () => {
     // Mock prediction calculation based on form inputs
     let baseTime = parseInt(formData.distance) * 2 // 2 minutes per km base
     let delayFactor = 0
@@ -97,14 +172,7 @@ const DeliveryPrediction = () => {
   }
 
   const handlePredict = async () => {
-    setIsLoading(true)
-    
-    // Simulate API call delay
-    await new Promise(resolve => setTimeout(resolve, 1500))
-    
-    const result = calculatePrediction()
-    setPrediction(result)
-    setIsLoading(false)
+    await calculatePrediction();
   }
 
   const isFormValid = Object.values(formData).every(value => value !== '')
@@ -322,6 +390,19 @@ const DeliveryPrediction = () => {
             </button>
           </div>
         </div>
+
+        {/* Error Display */}
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-6 mt-8">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="w-6 h-6 text-red-600" />
+              <div>
+                <h3 className="text-lg font-semibold text-red-800">Prediction Error</h3>
+                <p className="text-red-600">{error}</p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Prediction Results */}
         {prediction && (
