@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { DollarSign, Clock, MapPin, TrendingUp, AlertTriangle, Download, Filter, Search, Eye, BarChart3, PieChart } from 'lucide-react';
 
 const CostAnalysis = () => {
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('cost');
   const [sortOrder, setSortOrder] = useState('desc');
@@ -20,28 +22,10 @@ const CostAnalysis = () => {
       setLoading(true);
       setError(null);
       
-      // Fetch cost analysis data
-      const costResponse = await fetch('http://localhost:8000/cost-analysis', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({})
-      });
-
-      if (!costResponse.ok) {
-        throw new Error(`Cost analysis API failed: ${costResponse.status}`);
-      }
+      
 
       // Fetch cost anomalies data
-      const anomaliesResponse = await fetch('http://localhost:8000/cost-anomalies', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({})
-      });
-
+      const anomaliesResponse = await fetch('http://127.0.0.1:8000/cost-anomalies');
       if (!anomaliesResponse.ok) {
         throw new Error(`Cost anomalies API failed: ${anomaliesResponse.status}`);
       }
@@ -49,17 +33,32 @@ const CostAnalysis = () => {
       const anomaliesData = await anomaliesResponse.json();
 
       // Transform and combine the data
-      const transformedData = anomaliesData.map((anomaly, index) => ({
-        orderId: `ORD${String(index + 1).padStart(6, '0')}`,
-        cost: anomaly.cost?.toFixed(2) || '0.00',
-        distance: anomaly.distance?.toFixed(1) || '0.0',
-        duration: anomaly.time_taken?.toFixed(0) || '0',
-        costPerKm: (anomaly.cost / anomaly.distance)?.toFixed(2) || '0.00',
-        anomalyType: anomaly.anomaly_type || 'unknown',
-        status: 'completed',
-        supplier: anomaly.supplier_name || `Supplier ${String.fromCharCode(65 + (index % 26))}`,
-        predictionAccuracy: anomaly.prediction_accuracy?.toFixed(2) || '0.00'
-      }));
+     const transformedData = anomaliesData.map((anomaly, index) => {
+     const cost = parseFloat(anomaly.cost);
+     const distance = parseFloat(anomaly.distance);
+     const duration = parseFloat(anomaly.time_taken ?? anomaly.duration); // fallback if some have `duration`
+     const predictionAccuracy = parseFloat(anomaly.prediction_accuracy);
+
+     return {
+       orderId: `ORD${String(index + 1).padStart(6, '0')}`,
+       cost: isNaN(cost) ? 0 : Number(cost.toFixed(2)),
+       distance: isNaN(distance) ? 0 : Number(distance.toFixed(1)),
+       duration: isNaN(duration) ? 0 : Number(duration.toFixed(0)),
+       costPerKm:
+         !isNaN(cost) && !isNaN(distance) && distance !== 0
+           ? Number((cost / distance).toFixed(2))
+           : 0,
+       anomalyType: anomaly.anomaly_type || 'unknown',
+       status: 'completed',
+       supplier:
+         anomaly.supplier_name || `Supplier ${String.fromCharCode(65 + (index % 26))}`,
+       predictionAccuracy: isNaN(predictionAccuracy)
+         ? 0
+         : Number(predictionAccuracy.toFixed(2)),
+    };
+});
+
+
 
       setAnomaliesData(transformedData);
     } catch (err) {
@@ -168,6 +167,11 @@ const CostAnalysis = () => {
                      parseFloat(b.duration);
       return (aValue - bValue) * multiplier;
     });
+  
+  const indexOfLastItem = currentPage * itemsPerPage;
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+  const currentItems = filteredAndSortedData.slice(indexOfFirstItem, indexOfLastItem);
+  const totalPages = Math.ceil(filteredAndSortedData.length / itemsPerPage);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 p-6">
@@ -394,68 +398,64 @@ const CostAnalysis = () => {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredAndSortedData.map((delivery, index) => (
-                  <tr key={index} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <div className="flex-shrink-0 h-10 w-10">
-                          <div className="h-10 w-10 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center">
-                            <span className="text-white font-semibold text-xs">
-                              {index + 1}
-                            </span>
+                {currentItems.map((delivery, index) => {
+                  const globalIndex = (currentPage - 1) * itemsPerPage + index + 1;
+                  return (
+                    <tr key={index} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          <div className="flex-shrink-0 h-10 w-10">
+                            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center">
+                              <span className="text-white font-semibold text-xs">
+                                {globalIndex}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="ml-4">
+                            <div className="text-sm font-medium text-gray-900">
+                              {delivery.orderId}
+                            </div>
+                            <div className="text-sm text-gray-500">
+                              {delivery.supplier}
+                            </div>
                           </div>
                         </div>
-                        <div className="ml-4">
-                          <div className="text-sm font-medium text-gray-900">
-                            {delivery.orderId}
-                          </div>
-                          <div className="text-sm text-gray-500">
-                            {delivery.supplier}
-                          </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm">
+                          <div className="text-lg font-bold text-gray-900">₹{delivery.cost}</div>
+                          <div className="text-gray-500">₹{delivery.costPerKm}/km</div>
                         </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm">
-                        <div className="text-lg font-bold text-gray-900">
-                          ₹{delivery.cost}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm">
+                          <div className="font-medium text-gray-900">{delivery.distance} km</div>
+                          <div className="text-gray-500">{delivery.duration} min</div>
                         </div>
-                        <div className="text-gray-500">
-                          ₹{delivery.costPerKm}/km
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm">
-                        <div className="font-medium text-gray-900">
-                          {delivery.distance} km
-                        </div>
-                        <div className="text-gray-500">
-                          {delivery.duration} min
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full capitalize ${getAnomalyColor(delivery.anomalyType)}`}>
-                        {delivery.anomalyType}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full capitalize ${getStatusColor(delivery.status)}`}>
-                        {delivery.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <button 
-                        onClick={() => handleViewDetails(delivery)}
-                        className="text-emerald-600 hover:text-emerald-800 transition-colors"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full capitalize ${getAnomalyColor(delivery.anomalyType)}`}>
+                          {delivery.anomalyType}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full capitalize ${getStatusColor(delivery.status)}`}>
+                          {delivery.status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <button 
+                          onClick={() => handleViewDetails(delivery)}
+                          className="text-emerald-600 hover:text-emerald-800 transition-colors"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
+
             </table>
           </div>
         </div>

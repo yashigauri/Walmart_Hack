@@ -1,4 +1,4 @@
-# scripts/enhanced_feature_engineering.py
+# scripts/feature_engineering.py
 
 import os
 import logging
@@ -93,6 +93,72 @@ def save(df: pd.DataFrame) -> None:
     logger.info("Saved → %s", OUTPUT_PATH)
     logger.info("Anomaly rate: %.2f %%", 100 * df["is_anomaly"].mean())
     logger.info("Delay   rate: %.2f %%", 100 * df["delay_label"].mean())
+
+def prepare_model_input(raw_input: dict, for_training=False) -> pd.DataFrame:
+    if for_training:
+        df = pd.DataFrame(raw_input)
+    else:
+        df = pd.DataFrame([raw_input])
+
+    df.rename(columns={"weight": "weight_kg", "distance": "distance_km"}, inplace=True)
+
+    # Only required feature engineering
+    df["weight_per_km"] = np.where(df["distance_km"] > 0, df["weight_kg"] / df["distance_km"], 0)
+    df["same_zone"] = (df["from_zone"] == df["to_zone"]).astype(int)
+    # Categorize weight manually
+    def get_weight_category(weight):
+        if weight < 5:
+            return "light"
+        elif weight < 15:
+            return "medium"
+        elif weight < 30:
+            return "heavy"
+        else:
+            return "very_heavy"
+
+    df["weight_category"] = df["weight_kg"].apply(get_weight_category)
+    def get_distance_category(distance):
+        if distance < 5:
+            return "short"
+        elif distance < 15:
+            return "medium"
+        elif distance < 30:
+            return "long"
+        else:
+            return "very_long"
+
+    df["distance_category"] = df["distance_km"].apply(get_distance_category)
+
+    # One-hot encoding for time_slot, weight_category, distance_category
+    time_dummies = pd.get_dummies(df["time_slot"], prefix="time_slot")
+    weight_dummies = pd.get_dummies(df["weight_category"], prefix="weight_category")
+    distance_dummies = pd.get_dummies(df["distance_category"], prefix="distance_category")
+
+    df = pd.concat([df, time_dummies, weight_dummies, distance_dummies], axis=1)
+
+    # Ensure all expected features are present (fill missing with 0)
+    for col in [
+        "time_slot_Morning", "time_slot_Night",
+        "weight_category_light", "weight_category_medium",
+        "weight_category_heavy", "weight_category_very_heavy",
+        "distance_category_short", "distance_category_medium",
+        "distance_category_long", "distance_category_very_long"
+    ]:
+        if col not in df.columns:
+            df[col] = 0
+
+    # Final feature selection
+    feature_cols = [
+        "distance_km", "weight_kg", "same_zone", "weight_per_km",
+        "time_slot_Morning", "time_slot_Night",
+        "weight_category_light", "weight_category_medium",
+        "weight_category_heavy", "weight_category_very_heavy",
+        "distance_category_short", "distance_category_medium",
+        "distance_category_long", "distance_category_very_long"
+    ]
+
+    return df[feature_cols]
+
 
 # ── 6. Main ────────────────────────────────────────────────────────────────
 def main() -> Tuple[str, str]:

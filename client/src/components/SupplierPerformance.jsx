@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Search, Filter, Download, TrendingUp, AlertCircle, Award, Eye } from 'lucide-react';
 
 const SupplierPerformance = () => {
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTier, setSelectedTier] = useState('All');
   const [sortBy, setSortBy] = useState('score');
@@ -29,23 +31,28 @@ const SupplierPerformance = () => {
         // Transform API data to match our component structure
         const transformedData = apiData.map((supplier) => ({
           name: supplier.supplier,
-          reliabilityScore: Math.round(supplier.score * 10), // Convert to 0-100 scale
-          onTimeRate: Math.round(supplier.on_time_rate * 100),
-          avgPredictedDelay: Math.round(supplier.avg_lead_time * 7), // Estimate
-          avgActualDelay: Math.round(supplier.avg_lead_time * 7.5), // Slightly higher than predicted
-          totalRLTimeSaved: Math.round(supplier.score * 15), // Estimate based on score
-          orderVolume: Math.round(1000 + supplier.score * 500), // Estimate
-          avgDistance: Math.round(10 + Math.random() * 20),
-          avgWeight: parseFloat((3 + Math.random() * 8).toFixed(1)),
-          highTrafficDeliveries: Math.round(supplier.on_time_rate * 200),
-          zonesServed: Math.ceil(supplier.score / 2),
-          severeDelayRate: Math.round((1 - supplier.on_time_rate) * 15),
-          weatherResilience: Math.round(supplier.on_time_rate * 100),
-          distanceEfficiency: Math.round(80 + supplier.score * 2),
-          rlOptimizationRate: Math.round(70 + supplier.score * 3),
-          tier: supplier.score >= 8 ? 'Gold' : supplier.score >= 6 ? 'Silver' : supplier.score >= 4 ? 'Bronze' : 'Critical Review',
-          score: supplier.score
+          reliabilityScore: (supplier.reliability_score * 100).toFixed(1) + "%",
+ // Already 0-100 score
+          onTimeRate: Math.round(supplier.on_time_rate * 100), // Convert to %
+          avgPredictedDelay: Math.round(supplier.avg_predicted_delay),
+          avgActualDelay: Math.round(supplier.avg_actual_delay),
+          totalRLTimeSaved: Math.round(supplier.total_rl_time_saved), // in hours
+          orderVolume: supplier.order_volume,
+          avgDistance: Math.round(supplier.avg_distance), // in km
+          avgWeight: Math.round(supplier.avg_weight), // in kg
+          highTrafficDeliveries: supplier.high_traffic_deliveries,
+          zonesServed: supplier.zones_served,
+          severeDelayRate: Math.round(supplier.severe_delay_rate * 100), // Convert to %
+          weatherResilience: (supplier.weather_resilience * 100).toFixed(1),
+          distanceEfficiency: (supplier.distance_efficiency * 100).toFixed(1), // already 0-100
+          rlOptimizationRate: Math.round(supplier.rl_optimization_rate), // already 0-100
+          tier: supplier.tier,
+          score: supplier.score,
+          riskLevel: supplier.risk_level,
+          potentialTimeSavings: supplier.potential_time_savings,
+          businessImpact: supplier.business_impact
         }));
+
         
         setSupplierData(transformedData);
       } catch (err) {
@@ -69,6 +76,7 @@ const SupplierPerformance = () => {
 
   const handleExport = () => {
     const dataToExport = filteredAndSortedData.map(supplier => ({
+      
       'Supplier Name': supplier.name,
       'Reliability Score': supplier.reliabilityScore,
       'On-Time Rate': `${supplier.onTimeRate}%`,
@@ -162,11 +170,24 @@ const SupplierPerformance = () => {
       const multiplier = sortOrder === 'asc' ? 1 : -1;
       return (a[sortBy] - b[sortBy]) * multiplier;
     });
+  const totalPages = Math.ceil(filteredAndSortedData.length / itemsPerPage);
+  const paginatedData = filteredAndSortedData.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
 
-  const tierCounts = supplierData.reduce((acc, supplier) => {
-    acc[supplier.tier] = (acc[supplier.tier] || 0) + 1;
-    return acc;
-  }, {});
+  const goldTierCount = supplierData.filter(supplier => (supplier.tier || '').includes('Gold')).length;
+  const criticalReviewCount = supplierData.filter(supplier => (supplier.tier || '').includes('Critical Review')).length;
+ 
+
+  const avgReliability = supplierData.length > 0
+  ? (
+      supplierData.reduce((sum, s) => {
+        const num = parseFloat(s.reliabilityScore.replace('%', ''));
+        return sum + (isNaN(num) ? 0 : num);
+      }, 0) / supplierData.length
+    ).toFixed(1)
+  : '0.0';
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 p-6">
@@ -203,7 +224,7 @@ const SupplierPerformance = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600">Gold Tier</p>
-                <p className="text-2xl font-bold text-yellow-600">{tierCounts['Gold'] || 0}</p>
+                <p className="text-2xl font-bold text-yellow-600">{goldTierCount || 0}</p>
               </div>
               <div className="p-3 bg-yellow-100 rounded-full">
                 <Award className="w-6 h-6 text-yellow-600" />
@@ -215,7 +236,8 @@ const SupplierPerformance = () => {
               <div>
                 <p className="text-sm text-gray-600">Avg Reliability</p>
                 <p className="text-2xl font-bold text-green-600">
-                  {(supplierData.reduce((sum, s) => sum + s.reliabilityScore, 0) / supplierData.length).toFixed(1)}
+                  <p className="text-2xl font-bold text-green-600">{avgReliability}</p>
+
                 </p>
               </div>
               <div className="p-3 bg-green-100 rounded-full">
@@ -227,7 +249,7 @@ const SupplierPerformance = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600">Critical Review</p>
-                <p className="text-2xl font-bold text-red-600">{tierCounts['Critical Review'] || 0}</p>
+                <p className="text-2xl font-bold text-red-600">{criticalReviewCount || 0}</p>
               </div>
               <div className="p-3 bg-red-100 rounded-full">
                 <AlertCircle className="w-6 h-6 text-red-600" />
@@ -358,7 +380,7 @@ const SupplierPerformance = () => {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredAndSortedData.map((supplier, index) => (
+                {paginatedData.map((supplier, index) => (
                   <tr key={index} className="hover:bg-gray-50 transition-colors">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
@@ -572,6 +594,48 @@ const SupplierPerformance = () => {
         <div className="text-center text-gray-500 text-sm">
           Showing {filteredAndSortedData.length} of {supplierData.length} suppliers
         </div>
+        {/* Pagination Controls */}
+        <div className="flex justify-center mt-4 space-x-2">
+          <button
+            onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+            disabled={currentPage === 1}
+            className={`px-4 py-2 rounded-lg border text-sm font-medium ${
+              currentPage === 1
+                ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                : 'bg-white text-gray-700 hover:bg-gray-100'
+            }`}
+          >
+            Previous
+          </button>
+
+          {/* Page numbers */}
+          {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+            <button
+              key={page}
+              onClick={() => setCurrentPage(page)}
+              className={`px-3 py-2 rounded-lg text-sm font-medium ${
+                page === currentPage
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-white text-gray-700 hover:bg-gray-100'
+              }`}
+            >
+              {page}
+            </button>
+          ))}
+
+          <button
+            onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+            disabled={currentPage === totalPages}
+            className={`px-4 py-2 rounded-lg border text-sm font-medium ${
+              currentPage === totalPages
+                ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                : 'bg-white text-gray-700 hover:bg-gray-100'
+            }`}
+          >
+            Next
+          </button>
+        </div>
+
 
         {/* Modal for supplier details */}
         {selectedSupplier && (
